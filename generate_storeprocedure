@@ -1,0 +1,110 @@
+CREATE OR REPLACE FUNCTION utils.generate_storedprocedure (
+  p_schemaname varchar,
+  p_tablename varchar
+)
+RETURNS varchar AS
+$body$
+DECLARE
+	oRecord		RECORD;
+	oTableDef	REFCURSOR;
+
+	oFunctionBody 	    VARCHAR;
+	oSQLCommand	        VARCHAR;
+	oFilter		        VARCHAR;
+	oParameterList	    VARCHAR;
+	oFieldNameList	    VARCHAR;
+	oPrimaryKeyName     VARCHAR;
+	oSqlChk             VARCHAR;
+	oDespuesBd          VARCHAR;
+	lNameRecord         varchar;
+	lNamefun            varchar;
+	recNameFun          record;
+	SqltoIns            varchar;
+	ListField           varchar;
+
+
+	
+BEGIN
+     lNameRecord := 'registro';
+     oPrimaryKeyName := utils.getPrimaryKeyName(p_schemaName,p_tableName) ;
+	-- Creando Store Procedure basado en <p_schemaName>.<p_tableName>
+	oFunctionBody 	:= 'CREATE OR REPLACE FUNCTION ' ||p_schemaName||'.fn_'||p_tableName ||'(' ;
+	oSQLCommand 	:= chr(10)||'UPDATE '||p_schemaName ||'.'||p_tableName || chr(10)||' SET ';
+	OPEN oTableDef FOR SELECT  utils.getFieldNames(p_schemaName,p_tableName);
+	FETCH oTableDef INTO oTableDef;
+
+	oParameterList 	:= '';
+	oFieldNameList	:= '';
+    ListField := '';
+	LOOP
+	    FETCH oTableDef INTO oRecord ;
+	
+		IF FOUND THEN
+		
+
+			IF oParameterList != '' THEN
+				oParameterList := oParameterList || ', ' ;
+
+				
+			END IF ;
+			
+			IF oFieldNameList != '' THEN
+				oFieldNameList := oFieldNameList || ',' ;
+
+			END IF ;
+			
+		oParameterList := oParameterList || 'p_' || oRecord.column_name || ' ' || oRecord.data_type ;
+
+	
+			IF oRecord.column_name != oPrimaryKeyName THEN
+
+            if ListField != '' THEN
+			   ListField := ListField|| ',' ;
+			 end if;			
+			
+               ListField := ListField || 'p_' ||oRecord.column_name;
+
+				oFieldNameList := oFieldNameList|| oRecord.column_name ||' = '||'p_'|| oRecord.column_name ;
+
+
+
+			ELSE
+			
+				oFilter := ' WHERE '||oRecord.column_name||' = '||'p_'||oRecord.column_name ||';';
+                oSqlChk := 'SELECT * from ' || p_tablename || ' INTO ' || lNameRecord || ' WHERE '||oRecord.column_name||' = '||'p_'||oRecord.column_name ||' for UPDATE'||';';
+
+        	END IF ;
+		ELSE
+
+			oParameterList := oParameterList || ')' ;
+		
+			EXIT ;
+		END IF ;
+
+
+	END LOOP ;
+        oSqlChk := oSqlChk || chr(10) || 'If found THEN';
+	oDespuesBd := ' DECLARE ' || 'registro record;' || chr(10);
+	
+        oSQLCommand := oSqlChk || oSQLCommand || oFieldNameList ||oFilter ;
+	oFunctionBody := oFunctionBody || oParameterList ;
+	oFunctionBody := oFunctionBody || chr(10)||' RETURNS VOID AS  ' || CHR(36) || CHR(36) || oDespuesBd ||'  BEGIN ';
+        Select utils.generateinsertstoredprocedure(p_schemaname,p_tablename) as nameFunc into recNameFun;
+        lNamefun := trim(recNameFun.nameFunc);
+        SqltoIns := chr(10) || 'perform ' || lNamefun||'('||ListField||');';
+	oFunctionBody := oFunctionBody || oSQLCommand ;
+	oFunctionBody := oFunctionBody || chr(10) || 'Else'|| SqltoIns || chr(10) || 'End if;' ||chr(10)|| ' END; ' || chr(10) || CHR(36)||CHR(36) ||' LANGUAGE PLPGSQL ' ;
+
+
+	CLOSE oTableDef ;
+	--INSERT INTO gquery(query) VALUES (oFunctionBody) ;
+   EXECUTE ''||oFunctionBody ||'' ;
+   --return oFunctionBody;
+   return ListField;
+END;
+$body$
+LANGUAGE 'plpgsql'
+VOLATILE
+CALLED ON NULL INPUT
+SECURITY INVOKER
+COST 100;
