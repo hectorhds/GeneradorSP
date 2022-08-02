@@ -1,0 +1,90 @@
+CREATE OR REPLACE FUNCTION utils.generateinsertstoredprocedure (
+  p_schemaname varchar,
+  p_tablename varchar
+)
+RETURNS varchar AS
+$body$
+DECLARE
+	oRecord 			RECORD;
+	oTableDef			REFCURSOR;
+
+	oFunctionBody		VARCHAR;
+	oSQLCommand			VARCHAR;
+	oParameterList		VARCHAR;
+	oFieldNameList		VARCHAR;
+	oParameterValues	VARCHAR;
+	oPrimaryKeyName     VARCHAR;
+	fnName              varchar;
+	
+BEGIN
+    oPrimaryKeyName := utils.getPrimaryKeyName(p_schemaName,p_tableName) ;
+	oFunctionBody := 'CREATE OR REPLACE FUNCTION ' || p_schemaName || '.ins_' || p_tableName || '(';
+	oSQLCommand :='INSERT INTO ' || p_schemaName || '.' || p_tableName || '(';
+	OPEN oTableDef FOR SELECT utils.getFieldNames(p_schemaName,p_tableName);
+	FETCH oTableDef INTO oTableDef;
+
+	--FETCH oTableDef INTO oRecord;
+	oParameterList := '';
+	oFieldNameList :='' ;
+	oParameterValues   :='' ;
+LOOP
+		FETCH oTableDef INTO oRecord ;
+		-- Function body at this point should include Parameter list
+		IF FOUND THEN
+			/**
+			* If we have a record Then we assign parameter list and continue building the SQL Command
+			*
+		 	* Inspecting if we must insert commas. The principal is as follows :
+		 	*  If the parameter list is not empty i.e != '' then we have at least one element that is inserted and because the status is set to FOUND then it means the previous elements have to be appended with comma before adding the new fields found
+		 	*  consider that the Parameter list is the same as the field name list that would be in the INSERT statement
+			*/
+			IF oParameterList != '' THEN
+				oParameterList := oParameterList || ', ' ;
+				oFieldNameList := oFieldNameList || ',' ;
+				oParameterValues := oParameterValues || ',' ;
+			
+			END IF ;
+			/**
+			* Parameter list  and field name lists:
+			* Not taking into account agn which is the primary key
+            		*/
+			IF oRecord.column_name != oPrimaryKeyName THEN
+				oParameterValues := oParameterValues ||'p_'|| oRecord.column_name;
+				oParameterList := oParameterList || 'p_' || oRecord.column_name || ' ' || oRecord.data_type ;
+				oFieldNameList := oFieldNameList || oRecord.column_name ;
+			END IF ;
+		ELSE
+			/**
+            		* At this point nothing has been found in oRecord,
+            		* We can now proceed to close the SQL Command with either parenthesis or semi colon
+            		* We have to place the closing parenthesis and the Exit the loop
+            		*/
+			oParameterList := oParameterList || ')' ;
+			oFieldNameList := oFieldNameList || ')' ;
+			oParameterValues := oParameterValues ||') ; ';
+			EXIT ;
+		END IF ;
+	
+	END LOOP;
+	-- Let's build the SQL Command string, remembering that the oParameterList and oFieldNameList already contains the closing parenthesis
+	oSQLCommand := oSQLCommand || oFieldNameList ;
+	oSQLCommand := oSQLCommand || ' VALUES (' || oParameterValues ;
+	
+	oFunctionBody := oFunctionBody || oParameterList;
+	oFunctionBody := oFunctionBody || ' RETURNS VOID AS  ' || CHR(36) || CHR(36) || '  BEGIN ';
+
+	oFunctionBody := oFunctionBody || oSQLCommand ;
+	oFunctionBody := oFunctionBody || ' END; ' || CHR(36)||CHR(36) ||' LANGUAGE PLPGSQL ' ;
+
+	CLOSE oTableDef ;
+	-- INSERT INTO gQuery(query) VALUES (''||oFunctionBody||'') ;
+	fnName := 'ins_' || p_tableName;
+	EXECUTE ''|| oFunctionBody || '';
+	RETURN fnName;
+END;
+$body$
+LANGUAGE 'plpgsql'
+VOLATILE
+CALLED ON NULL INPUT
+SECURITY INVOKER
+COST 100;
