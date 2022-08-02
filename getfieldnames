@@ -1,0 +1,25 @@
+CREATE OR REPLACE FUNCTION utils.getfieldnames (
+  p_schemaname varchar,
+  p_tablename varchar
+)
+RETURNS refcursor AS
+$body$
+DECLARE
+	oFieldNames REFCURSOR;
+BEGIN
+	OPEN oFieldNames FOR
+	SELECT column_name,data_type
+	FROM
+		information_schema.columns
+	WHERE
+		table_schema=p_schemaName and table_name = p_tableName
+		;
+
+	return oFieldNames ;
+END;
+$body$
+LANGUAGE 'plpgsql'
+VOLATILE
+CALLED ON NULL INPUT
+SECURITY INVOKER
+COST 100;
